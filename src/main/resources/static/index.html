@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat · Tiempo Real</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:            #0e1117;
+            --surface:       #161b24;
+            --border:        #252d3b;
+            --accent:        #4f8ef7;
+            --accent2:       #a78bfa;
+            --success:       #34d399;
+            --warning:       #fbbf24;
+            --danger:        #f87171;
+            --text:          #e2e8f0;
+            --muted:         #64748b;
+            --bubble-me:     #4f8ef7;
+            --bubble-other:  #1e2736;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg);
+            font-family: 'DM Sans', sans-serif;
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-image:
+                radial-gradient(ellipse at 20% 20%, rgba(79,142,247,0.07) 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 80%, rgba(167,139,250,0.07) 0%, transparent 60%);
+        }
+
+        /* ─── WRAPPER ─────────────────────────────── */
+        .chat-shell {
+            width: 100%;
+            max-width: 580px;
+            height: 96vh;
+            display: flex;
+            flex-direction: column;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            overflow: hidden;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+        }
+
+        /* ─── HEADER ──────────────────────────────── */
+        .top-bar {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--surface);
+            flex-shrink: 0;
+        }
+        .top-bar .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-family: 'Space Mono', monospace;
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: -0.02em;
+        }
+        .top-bar .brand i { color: var(--accent); font-size: 1.1rem; }
+
+        .mode-pill {
+            font-size: 0.68rem;
+            font-family: 'Space Mono', monospace;
+            padding: 0.2rem 0.6rem;
+            border-radius: 99px;
+            border: 1px solid transparent;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            transition: all 0.2s;
+        }
+        .mode-pill.polling { background: rgba(167,139,250,0.15); border-color: var(--accent2); color: var(--accent2); }
+        .mode-pill.ws      { background: rgba(52,211,153,0.15);  border-color: var(--success);  color: var(--success); }
+        .mode-pill.none    { background: rgba(100,116,139,0.12); border-color: var(--border);   color: var(--muted); }
+
+        /* ─── STATUS DOT ──────────────────────────── */
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.72rem;
+            color: var(--muted);
+        }
+        .dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: var(--muted);
+            transition: background 0.3s;
+        }
+        .dot.on   { background: var(--success); box-shadow: 0 0 6px var(--success); }
+        .dot.warn { background: var(--warning); }
+
+        /* ─── SCREENS ─────────────────────────────── */
+        .screen {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2.5rem 2rem;
+            gap: 1.5rem;
+            overflow: hidden;
+        }
+        .screen.active { display: flex; }
+
+        /* ─── SCREEN 1 : MODE SELECTOR ────────────── */
+        #screen-mode { gap: 2rem; }
+
+        #screen-mode .headline { text-align: center; }
+        #screen-mode .headline h2 {
+            font-family: 'Space Mono', monospace;
+            font-size: 1.35rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+        #screen-mode .headline p {
+            color: var(--muted);
+            font-size: 0.85rem;
+            margin-top: 0.4rem;
+        }
+
+        .mode-cards {
+            display: flex;
+            gap: 1rem;
+            width: 100%;
+            max-width: 420px;
+        }
+        .mode-card {
+            flex: 1;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem 1rem;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.75rem;
+            text-align: center;
+            transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+        .mode-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .mode-card.polling::before { background: radial-gradient(circle at 50% 0%, rgba(167,139,250,0.12), transparent 70%); }
+        .mode-card.ws::before      { background: radial-gradient(circle at 50% 0%, rgba(52,211,153,0.12),  transparent 70%); }
+
+        .mode-card:hover { transform: translateY(-3px); }
+        .mode-card:hover::before { opacity: 1; }
+        .mode-card.polling:hover { border-color: var(--accent2); box-shadow: 0 8px 32px rgba(167,139,250,0.15); }
+        .mode-card.ws:hover      { border-color: var(--success);  box-shadow: 0 8px 32px rgba(52,211,153,0.15); }
+
+        .mode-card .icon-wrap {
+            width: 52px; height: 52px;
+            border-radius: 14px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem;
+        }
+        .mode-card.polling .icon-wrap { background: rgba(167,139,250,0.15); color: var(--accent2); }
+        .mode-card.ws      .icon-wrap { background: rgba(52,211,153,0.15);  color: var(--success); }
+
+        .mode-card .card-title {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+        .mode-card .card-desc {
+            font-size: 0.75rem;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        /* ─── SCREEN 2 : LOGIN ─────────────────────── */
+        #screen-login { gap: 1.75rem; }
+
+        .login-icon {
+            width: 64px; height: 64px;
+            border-radius: 18px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.8rem;
+        }
+        .login-icon.polling { background: rgba(167,139,250,0.15); color: var(--accent2); }
+        .login-icon.ws      { background: rgba(52,211,153,0.15);  color: var(--success); }
+
+        .login-body {
+            width: 100%;
+            max-width: 340px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .login-body label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--muted);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        /* ─── INPUTS ──────────────────────────────── */
+        .inp {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            padding: 0.65rem 0.9rem;
+            font-size: 0.9rem;
+            font-family: 'DM Sans', sans-serif;
+            width: 100%;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            outline: none;
+        }
+        .inp:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(79,142,247,0.15);
+        }
+        .inp::placeholder { color: var(--muted); }
+
+        /* ─── BUTTONS ─────────────────────────────── */
+        .btn-main {
+            border: none;
+            border-radius: 10px;
+            padding: 0.65rem 1.25rem;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            transition: opacity 0.15s, transform 0.12s;
+        }
+        .btn-main:hover  { opacity: 0.88; }
+        .btn-main:active { transform: scale(0.98); }
+        .btn-main.polling { background: var(--accent2); color: #fff; }
+        .btn-main.ws      { background: var(--success);  color: #0e1117; }
+        .btn-main.accent  { background: var(--accent);   color: #fff; }
+
+        .btn-back {
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--muted);
+            font-size: 0.78rem;
+            padding: 0.35rem 0.85rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            transition: color 0.15s, border-color 0.15s;
+            font-family: 'DM Sans', sans-serif;
+        }
+        .btn-back:hover { color: var(--text); border-color: var(--muted); }
+
+        /* ─── SCREEN 3 : CHAT ─────────────────────── */
+        #screen-chat {
+            padding: 0;
+            justify-content: flex-start;
+            align-items: stretch;
+            overflow: hidden;
+        }
+
+        .user-bar {
+            padding: 0.55rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.78rem;
+            color: var(--muted);
+            flex-shrink: 0;
+            background: var(--surface);
+        }
+        .user-bar strong { color: var(--text); }
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            background: var(--bg);
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+
+        /* ─── BUBBLES ─────────────────────────────── */
+        .msg {
+            display: flex;
+            flex-direction: column;
+            max-width: 74%;
+            animation: msgIn 0.18s ease both;
+        }
+        .msg.mine  { align-self: flex-end;   align-items: flex-end; }
+        .msg.other { align-self: flex-start; align-items: flex-start; }
+
+        .msg-user-label {
+            font-size: 0.68rem;
+            color: var(--muted);
+            margin-bottom: 3px;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
+        .msg-bubble {
+            padding: 0.55rem 0.9rem;
+            border-radius: 14px;
+            font-size: 0.88rem;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+        .msg.mine  .msg-bubble {
+            background: var(--bubble-me);
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+        .msg.other .msg-bubble {
+            background: var(--bubble-other);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 4px;
+        }
+        .msg-time {
+            font-size: 0.62rem;
+            color: var(--muted);
+            margin-top: 3px;
+        }
+
+        .sys-msg {
+            text-align: center;
+            font-size: 0.72rem;
+            color: var(--muted);
+            padding: 0.15rem 0;
+            font-style: italic;
+        }
+
+        /* ─── INPUT BAR ───────────────────────────── */
+        .input-bar {
+            padding: 0.85rem 1rem;
+            border-top: 1px solid var(--border);
+            background: var(--surface);
+            flex-shrink: 0;
+            display: flex;
+            gap: 0.5rem;
+        }
+        .input-bar .inp { flex: 1; }
+
+        .send-btn {
+            background: var(--accent);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            width: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: opacity 0.15s;
+            flex-shrink: 0;
+        }
+        .send-btn:hover { opacity: 0.85; }
+
+        /* ─── ANIMATIONS ──────────────────────────── */
+        @keyframes msgIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .screen.active { animation: fadeSlideUp 0.25s ease both; }
+    </style>
+</head>
+<body>
+
+<div class="chat-shell">
+
+    <!-- ─── TOP BAR ─── -->
+    <div class="top-bar">
+        <div class="brand">
+            <i class="bi bi-chat-square-dots-fill"></i>
+            RealChat
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span class="mode-pill none" id="modePill">Sin modo</span>
+            <div class="status-row">
+                <span class="dot" id="statusDot"></span>
+                <span id="statusTxt">desconectado</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── SCREEN 1: SELECCIÓN DE MODO ─── -->
+    <div class="screen active" id="screen-mode">
+        <div class="headline">
+            <h2>¿Cómo quieres conectarte?</h2>
+            <p>Elige la tecnología de transporte para el chat</p>
+        </div>
+
+        <div class="mode-cards">
+            <div class="mode-card polling" onclick="elegirModo('polling')">
+                <div class="icon-wrap">
+                    <i class="bi bi-arrow-repeat"></i>
+                </div>
+                <div class="card-title">Long Polling</div>
+                <div class="card-desc">HTTP fetch repetido. Sencillo, sin librerías extras.</div>
+            </div>
+
+            <div class="mode-card ws" onclick="elegirModo('ws')">
+                <div class="icon-wrap">
+                    <i class="bi bi-lightning-charge-fill"></i>
+                </div>
+                <div class="card-title">WebSocket</div>
+                <div class="card-desc">Conexión persistente via STOMP. Baja latencia.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── SCREEN 2: LOGIN ─── -->
+    <div class="screen" id="screen-login">
+        <div class="login-icon" id="loginIcon">
+            <i class="bi bi-person-fill"></i>
+        </div>
+
+        <div style="text-align:center">
+            <h5 style="font-family:'Space Mono',monospace;font-size:1rem;font-weight:700">Identifícate</h5>
+            <p style="color:var(--muted);font-size:0.82rem;margin-top:0.35rem">
+                Modo: <strong id="modoLabel" style="color:var(--text)">—</strong>
+            </p>
+        </div>
+
+        <div class="login-body">
+            <label for="inputUsuario">Usuario</label>
+            <input type="text" id="inputUsuario" class="inp"
+                   placeholder="ej: juan" maxlength="20"
+                   onkeydown="if(event.key==='Enter') entrar()">
+            <button class="btn-main" id="btnEntrar" onclick="entrar()">
+                <i class="bi bi-arrow-right-circle"></i> Entrar al chat
+            </button>
+            <button class="btn-back" onclick="volverAModos()">
+                <i class="bi bi-chevron-left"></i> Cambiar modo
+            </button>
+        </div>
+    </div>
+
+    <!-- ─── SCREEN 3: CHAT ─── -->
+    <div class="screen" id="screen-chat">
+        <div class="user-bar">
+            <span>
+                <i class="bi bi-person-fill" style="color:var(--accent);margin-right:4px"></i>
+                Conectado como <strong id="chatUser"></strong>
+            </span>
+            <button class="btn-back" onclick="salir()">
+                <i class="bi bi-box-arrow-left"></i> Salir
+            </button>
+        </div>
+
+        <div id="messages">
+            <div class="sys-msg">— inicio del chat —</div>
+        </div>
+
+        <div class="input-bar">
+            <input type="text" id="txtMsg" class="inp"
+                   placeholder="Escribe un mensaje..."
+                   onkeydown="if(event.key==='Enter') enviar()">
+            <button class="send-btn" onclick="enviar()">
+                <i class="bi bi-send-fill"></i>
+            </button>
+        </div>
+    </div>
+
+</div>
+
+<!-- STOMP / SockJS -->
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+<script>
+    /* ══════════════════════════════════════════════
+       ESTADO GLOBAL
+    ══════════════════════════════════════════════ */
+    const API_POLLING = '/api/chat';
+    let modo          = null;   // 'polling' | 'ws'
+    let miUsuario     = '';
+    let stompClient   = null;
+    let pollingActivo = false;
+
+    /* ══════════════════════════════════════════════
+       NAVEGACIÓN ENTRE PANTALLAS
+    ══════════════════════════════════════════════ */
+    function mostrarScreen(id) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+
+    function elegirModo(m) {
+        modo = m;
+
+        const pill = document.getElementById('modePill');
+        if (m === 'polling') {
+            pill.textContent = 'Long Polling';
+            pill.className   = 'mode-pill polling';
+        } else {
+            pill.textContent = 'WebSocket';
+            pill.className   = 'mode-pill ws';
+        }
+
+        const icon  = document.getElementById('loginIcon');
+        const btn   = document.getElementById('btnEntrar');
+        const label = document.getElementById('modoLabel');
+
+        if (m === 'polling') {
+            icon.className  = 'login-icon polling';
+            icon.innerHTML  = '<i class="bi bi-arrow-repeat"></i>';
+            btn.className   = 'btn-main polling';
+            label.textContent = 'Long Polling';
+        } else {
+            icon.className  = 'login-icon ws';
+            icon.innerHTML  = '<i class="bi bi-lightning-charge-fill"></i>';
+            btn.className   = 'btn-main ws';
+            label.textContent = 'WebSocket (STOMP)';
+        }
+
+        mostrarScreen('screen-login');
+        setTimeout(() => document.getElementById('inputUsuario').focus(), 100);
+    }
+
+    function volverAModos() {
+        desconectar();
+        modo = null;
+        document.getElementById('modePill').textContent = 'Sin modo';
+        document.getElementById('modePill').className   = 'mode-pill none';
+        setStatus('desconectado', false);
+        mostrarScreen('screen-mode');
+    }
+
+    function salir() {
+        // FIX: enviar LEAVE por /app/chat.enviar (no existe /app/chat.salir en el backend)
+        if (modo === 'ws' && stompClient && stompClient.connected) {
+            try {
+                stompClient.send('/app/chat.enviar', {}, JSON.stringify({
+                    usuario: miUsuario, contenido: '', tipo: 'LEAVE'
+                }));
+            } catch(_) {}
+        }
+        desconectar();
+        limpiarMensajes();
+        mostrarScreen('screen-login');
+        document.getElementById('inputUsuario').value = '';
+        setStatus('desconectado', false);
+    }
+
+    /* ══════════════════════════════════════════════
+       ENTRAR AL CHAT
+    ══════════════════════════════════════════════ */
+    function entrar() {
+        const val = document.getElementById('inputUsuario').value.trim();
+        if (!val) return;
+        miUsuario = val;
+        document.getElementById('chatUser').textContent = miUsuario;
+        mostrarScreen('screen-chat');
+        limpiarMensajes();
+
+        if (modo === 'polling') {
+            iniciarPolling();
+        } else {
+            iniciarWebSocket();
+        }
+    }
+
+    /* ══════════════════════════════════════════════
+       ESTADO / UI
+    ══════════════════════════════════════════════ */
+    function setStatus(txt, conectado, advertencia = false) {
+        const dot = document.getElementById('statusDot');
+        document.getElementById('statusTxt').textContent = txt;
+        dot.className = 'dot' + (conectado ? ' on' : (advertencia ? ' warn' : ''));
+    }
+
+    function limpiarMensajes() {
+        document.getElementById('messages').innerHTML =
+            '<div class="sys-msg">— inicio del chat —</div>';
+    }
+
+    /* ══════════════════════════════════════════════
+       MODO A — LONG POLLING
+    ══════════════════════════════════════════════ */
+    function iniciarPolling() {
+        setStatus('conectado · polling', true);
+        pollingActivo = true;
+
+        // FIX: mostrar mensaje de entrada también en modo polling
+        agregarSysmsg(`${miUsuario} se unió al chat 👋`);
+
+        escuchar();
+    }
+
+    async function escuchar() {
+        if (!pollingActivo) return;
+        try {
+            const res = await fetch(`${API_POLLING}/mensajes`);
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    data.forEach(m => { if (m && m.usuario) mostrarMensaje(m); });
+                } else if (data && data.usuario) {
+                    mostrarMensaje(data);
+                }
+            }
+        } catch (e) {
+            if (!pollingActivo) return;
+            setStatus('reintentando...', false, true);
+            await esperar(2000);
+            if (pollingActivo) setStatus('conectado · polling', true);
+        }
+        if (pollingActivo) escuchar();   // loop
+    }
+
+    async function enviarPolling(texto) {
+        await fetch(`${API_POLLING}/mensajes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usuario: miUsuario, texto })
+        });
+    }
+
+    /* ══════════════════════════════════════════════
+       MODO B — WEBSOCKET / STOMP
+    ══════════════════════════════════════════════ */
+    function iniciarWebSocket() {
+        setStatus('conectando...', false, true);
+        const socket = new SockJS('/ws');
+        stompClient  = Stomp.over(socket);
+        stompClient.debug = null;   // silenciar logs de STOMP en consola
+
+        stompClient.connect({}, function() {
+            setStatus('conectado · ws', true);
+
+            // Suscribirse al topic público
+            stompClient.subscribe('/topic/publico', function(msg) {
+                mostrarMensaje(JSON.parse(msg.body));
+            });
+
+            // Notificar JOIN al servidor — el servidor hace broadcast y el frontend lo muestra
+            stompClient.send('/app/chat.unirse', {}, JSON.stringify({
+                usuario: miUsuario, contenido: '', tipo: 'JOIN'
+            }));
+
+        }, function(error) {
+            // FIX: pasar el parámetro error para evitar el warning de función vacía
+            console.error('Error WS:', error);
+            setStatus('error WS', false, true);
+        });
+    }
+
+    async function enviarWS(texto) {
+        if (!stompClient || !stompClient.connected) return;
+        stompClient.send('/app/chat.enviar', {}, JSON.stringify({
+            usuario: miUsuario, contenido: texto, tipo: 'CHAT'
+        }));
+    }
+
+    /* ══════════════════════════════════════════════
+       ENVIAR MENSAJE (despacha según modo)
+    ══════════════════════════════════════════════ */
+    async function enviar() {
+        const input = document.getElementById('txtMsg');
+        const texto = input.value.trim();
+        if (!texto || !miUsuario) return;
+        input.value = '';
+
+        try {
+            if (modo === 'polling') {
+                await enviarPolling(texto);
+            } else {
+                await enviarWS(texto);
+            }
+        } catch (e) {
+            agregarSysmsg('⚠ error al enviar', 'var(--danger)');
+        }
+    }
+
+    /* ══════════════════════════════════════════════
+       MOSTRAR MENSAJES
+    ══════════════════════════════════════════════ */
+    function mostrarMensaje(msg) {
+        // Mensajes de sistema (JOIN / LEAVE)
+        // FIX: ahora también funciona en modo WS porque el backend devuelve tipo:'JOIN'/'LEAVE'
+        if (msg.tipo === 'JOIN' || msg.tipo === 'LEAVE') {
+            agregarSysmsg(
+                msg.tipo === 'JOIN'
+                    ? `${msg.usuario} se unió al chat 👋`
+                    : `${msg.usuario} salió del chat`
+            );
+            return;
+        }
+
+        // Normalizar campos:
+        //   Long Polling → { usuario, texto, timestamp }
+        //   WebSocket    → { usuario, contenido, tipo }
+        const texto   = msg.texto || msg.contenido || '';
+        const usuario = msg.usuario || '?';
+        const esMio   = usuario === miUsuario;
+        const hora    = msg.timestamp
+            ? new Date(msg.timestamp).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+            : new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+
+        const box = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = 'msg ' + (esMio ? 'mine' : 'other');
+        div.innerHTML = `
+            <div class="msg-user-label">${esMio ? 'Tú' : escapeHtml(usuario)}</div>
+            <div class="msg-bubble">${escapeHtml(texto)}</div>
+            <div class="msg-time">${hora}</div>`;
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function agregarSysmsg(txt, color) {
+        const box = document.getElementById('messages');
+        const d   = document.createElement('div');
+        d.className = 'sys-msg';
+        if (color) d.style.color = color;
+        d.textContent = txt;
+        box.appendChild(d);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    /* ══════════════════════════════════════════════
+       UTILS
+    ══════════════════════════════════════════════ */
+    function desconectar() {
+        pollingActivo = false;
+        if (stompClient) {
+            try { stompClient.disconnect(); } catch(_) {}
+            stompClient = null;
+        }
+    }
+
+    function esperar(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+</script>
+</body>
+</html>
