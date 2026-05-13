@@ -499,6 +499,26 @@
 <!-- STOMP / SockJS -->
 <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+<!-- FIX: sockjs-client usa el evento 'unload' que está deprecado.
+     Lo reemplazamos por 'pagehide' que es el estándar moderno. -->
+<script>
+    (function patchSockJSUnload() {
+        const _add = EventTarget.prototype.addEventListener;
+        EventTarget.prototype.addEventListener = function(type, fn, opts) {
+            if (type === 'unload') {
+                type = 'pagehide';
+            }
+            return _add.call(this, type, fn, opts);
+        };
+        const _remove = EventTarget.prototype.removeEventListener;
+        EventTarget.prototype.removeEventListener = function(type, fn, opts) {
+            if (type === 'unload') {
+                type = 'pagehide';
+            }
+            return _remove.call(this, type, fn, opts);
+        };
+    })();
+</script>
 
 <script>
     /* ══════════════════════════════════════════════
@@ -610,20 +630,26 @@
     /* ══════════════════════════════════════════════
        MODO A — LONG POLLING
     ══════════════════════════════════════════════ */
+    let pollingAbortCtrl = null;   // controla la petición fetch activa
+
     function iniciarPolling() {
         setStatus('conectado · polling', true);
         pollingActivo = true;
-
-        // FIX: mostrar mensaje de entrada también en modo polling
         agregarSysmsg(`${miUsuario} se unió al chat 👋`);
-
         escuchar();
     }
 
     async function escuchar() {
         if (!pollingActivo) return;
+
+        // Cancelar petición anterior si existiera
+        if (pollingAbortCtrl) pollingAbortCtrl.abort();
+        pollingAbortCtrl = new AbortController();
+
         try {
-            const res = await fetch(`${API_POLLING}/mensajes`);
+            const res = await fetch(`${API_POLLING}/mensajes`, {
+                signal: pollingAbortCtrl.signal
+            });
             if (res.ok) {
                 const data = await res.json();
                 if (Array.isArray(data)) {
@@ -633,6 +659,7 @@
                 }
             }
         } catch (e) {
+            if (e.name === 'AbortError') return;   // cancelado intencionalmente, no reintentar
             if (!pollingActivo) return;
             setStatus('reintentando...', false, true);
             await esperar(2000);
@@ -756,6 +783,11 @@
     ══════════════════════════════════════════════ */
     function desconectar() {
         pollingActivo = false;
+        // Cancelar la petición long-polling activa para que no quede colgada
+        if (pollingAbortCtrl) {
+            pollingAbortCtrl.abort();
+            pollingAbortCtrl = null;
+        }
         if (stompClient) {
             try { stompClient.disconnect(); } catch(_) {}
             stompClient = null;
